@@ -16,6 +16,8 @@ dependencies = [
     "networkx>=3.4.2",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+    "torch>=2.14.0",
 ]
 
 [dependency-groups]
