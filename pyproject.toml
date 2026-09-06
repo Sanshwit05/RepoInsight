@@ -18,6 +18,8 @@ dependencies = [
     "pandas>=2.3.3",
     "scikit-learn>=1.7.2",
     "torch>=2.14.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
 ]
 
 [dependency-groups]

@@ -169,7 +169,7 @@ class RepositoryHealthEngine:
             total_sloc=snapshot.total_sloc,
             total_commits=churn_summary.total_commits,
             bus_factor=bus_report.bus_factor,
-            critical_hotspots_count=hotspot_report.critical_count,
+            critical_hotspots_count=hotspot_report.critical_count + hotspot_report.high_count,
             circular_dependencies_count=len(graph_report.cycles),
             key_findings=tuple(findings),
         )

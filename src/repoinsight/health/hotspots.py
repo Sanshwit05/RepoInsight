@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class HotspotRiskTier(str, Enum):
     """Categorical risk classification for repository files."""
 
-    CRITICAL = "CRITICAL"  # High complexity + high churn (urgent refactoring candidate)
+    CRITICAL = "CRITICAL"  # High complexity + high churn
     HIGH = "HIGH"
     MODERATE = "MODERATE"
     HEALTHY = "HEALTHY"
@@ -46,6 +46,7 @@ class HotspotAnalysisReport:
     hotspots: tuple[HotspotItem, ...]
     critical_count: int
     high_count: int
+    moderate_count: int
     average_hotspot_score: float
 
 
@@ -55,17 +56,17 @@ class HotspotDetector:
     @staticmethod
     def _classify_risk(score: float) -> tuple[HotspotRiskTier, str]:
         """Classify hotspot score into an actionable risk tier and recommendation."""
-        if score >= 0.70:
+        if score >= 0.55:
             return (
                 HotspotRiskTier.CRITICAL,
                 "URGENT: High complexity combined with heavy modification frequency. Target for modular refactoring.",
             )
-        if score >= 0.50:
+        if score >= 0.35:
             return (
                 HotspotRiskTier.HIGH,
                 "WARNING: Active volatility in complex module. Require strict code review and add regression tests.",
             )
-        if score >= 0.30:
+        if score >= 0.15:
             return (
                 HotspotRiskTier.MODERATE,
                 "MODERATE: Moderate churn. Monitor during upcoming contribution sprints.",
@@ -80,15 +81,7 @@ class HotspotDetector:
         snapshot: RepositoryAnalysisSnapshot,
         churn_summary: RepositoryChurnSummary,
     ) -> HotspotAnalysisReport:
-        """Detect and rank architectural hotspots by joining AST complexity and Git churn.
-
-        Args:
-            snapshot: Static code analysis snapshot.
-            churn_summary: Historical Git churn summary.
-
-        Returns:
-            HotspotAnalysisReport: Prioritized hotspot diagnosis.
-        """
+        """Detect and rank architectural hotspots by joining AST complexity and Git churn."""
         all_files = set(snapshot.file_results.keys()) | set(churn_summary.file_churns.keys())
         if not all_files:
             return HotspotAnalysisReport(
@@ -96,10 +89,10 @@ class HotspotDetector:
                 hotspots=(),
                 critical_count=0,
                 high_count=0,
+                moderate_count=0,
                 average_hotspot_score=0.0,
             )
 
-        # 1. Collect raw values
         file_complexities: dict[str, float] = {}
         file_churns: dict[str, int] = {}
         file_slocs: dict[str, int] = {}
@@ -119,7 +112,6 @@ class HotspotDetector:
             file_churns[path] = churn
             file_commits[path] = commits
 
-        # 2. Compute min-max boundaries for normalization
         max_comp = max(file_complexities.values(), default=1.0)
         min_comp = min(file_complexities.values(), default=1.0)
         max_churn = max(file_churns.values(), default=1)
@@ -128,13 +120,11 @@ class HotspotDetector:
         comp_range = max(1e-5, max_comp - min_comp)
         churn_range = max(1e-5, max_churn - min_churn)
 
-        # 3. Compute normalized scores and geometric mean
         hotspot_items: list[HotspotItem] = []
         for path in all_files:
             norm_comp = (file_complexities[path] - min_comp) / comp_range
             norm_churn = (file_churns[path] - min_churn) / churn_range
 
-            # Geometric mean: sqrt(norm_comp * norm_churn)
             hotspot_score = round(math.sqrt(norm_comp * norm_churn), 4)
             risk_tier, rec = self._classify_risk(hotspot_score)
 
@@ -153,22 +143,15 @@ class HotspotDetector:
                 )
             )
 
-        # Sort descending by hotspot score
         hotspot_items.sort(key=lambda h: (h.hotspot_score, h.total_churn), reverse=True)
 
         critical_count = sum(1 for h in hotspot_items if h.risk_tier == HotspotRiskTier.CRITICAL)
         high_count = sum(1 for h in hotspot_items if h.risk_tier == HotspotRiskTier.HIGH)
+        moderate_count = sum(1 for h in hotspot_items if h.risk_tier == HotspotRiskTier.MODERATE)
         avg_score = (
             round(sum(h.hotspot_score for h in hotspot_items) / len(hotspot_items), 3)
             if hotspot_items
             else 0.0
-        )
-
-        logger.info(
-            "Hotspot detection completed: %d files analyzed (%d critical, %d high).",
-            len(hotspot_items),
-            critical_count,
-            high_count,
         )
 
         return HotspotAnalysisReport(
@@ -176,40 +159,6 @@ class HotspotDetector:
             hotspots=tuple(hotspot_items),
             critical_count=critical_count,
             high_count=high_count,
+            moderate_count=moderate_count,
             average_hotspot_score=avg_score,
         )
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    print("--- Demonstrating Hotspot Detection Engine ---")
-    from src.repoinsight.analysis.scanner import RepositoryScanner
-    from src.repoinsight.health.churn import ChurnAggregator
-    from src.repoinsight.mining.miner import GitRepositoryMiner
-    from pathlib import Path
-
-    # Scan current repo static AST metrics
-    scanner = RepositoryScanner()
-    snapshot = scanner.scan(".")
-
-    # Aggregate churn from cloned sample or mock
-    local_repo = Path("data/repositories/github.com/octocat/Hello-World")
-    if local_repo.exists():
-        miner = GitRepositoryMiner(local_repo)
-        churn_summary = ChurnAggregator().aggregate(miner.mine_commits())
-    else:
-        churn_summary = ChurnAggregator().aggregate([])
-
-    detector = HotspotDetector()
-    report = detector.detect(snapshot, churn_summary)
-
-    print(f"\n[OK] Files Analyzed     : {report.total_files_analyzed}")
-    print(f"[OK] Critical Hotspots  : {report.critical_count}")
-    print(f"[OK] High Risk Hotspots : {report.high_count}")
-    print(f"[OK] Avg Hotspot Score  : {report.average_hotspot_score:.3f}")
-
-    print("\n--- Hotspot Ranking Sample ---")
-    for h in report.hotspots[:5]:
-        print(f"  * [{h.risk_tier.value:<8s}] {h.file_path:<35s} | Score: {h.hotspot_score:.3f} (Comp:{h.avg_complexity} | Churn:{h.total_churn})")
-        print(f"    -> {h.recommendation}")

@@ -32,7 +32,7 @@ class FileOwnershipProfile:
     primary_owner_email: str
     primary_owner_name: str
     primary_owner_share: float
-    is_siloed: bool  # True if primary owner holds >= threshold (e.g., 70%)
+    is_siloed: bool
     author_shares: tuple[AuthorShare, ...] = field(default_factory=tuple)
 
 
@@ -55,7 +55,6 @@ class OwnershipEngine:
     """Calculates author knowledge distribution, siloed files, and the repository Bus Factor."""
 
     def __init__(self, silo_threshold: float = 0.70) -> None:
-        """Initialize engine with the knowledge silo threshold (default 70% single-author ownership)."""
         self.silo_threshold = silo_threshold
 
     @staticmethod
@@ -68,25 +67,15 @@ class OwnershipEngine:
         n = len(sorted_vals)
         total_sum = sum(sorted_vals)
 
-        cumulative_sum = 0.0
         weighted_sum = 0.0
         for i, val in enumerate(sorted_vals, 1):
-            cumulative_sum += val
             weighted_sum += i * val
 
         gini = (2.0 * weighted_sum) / (n * total_sum) - (n + 1.0) / n
         return round(max(0.0, min(1.0, gini)), 3)
 
     def compute(self, commits: Iterable[CommitRecord]) -> BusFactorReport:
-        """Compute ownership profiles, Gini concentration, and the Bus Factor.
-
-        Args:
-            commits: Stream of CommitRecord instances from the repository miner.
-
-        Returns:
-            BusFactorReport: Complete ownership and bus factor diagnosis.
-        """
-        # Map: file_path -> author_email -> count
+        """Compute ownership profiles, Gini concentration, and the empirical Bus Factor."""
         file_author_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         author_names: dict[str, str] = {}
         repo_author_counts: dict[str, int] = defaultdict(int)
@@ -99,7 +88,9 @@ class OwnershipEngine:
             for change in commit.file_changes:
                 path = change.path
                 if path and path != "unknown_path":
-                    file_author_counts[path][author_email] += 1
+                    # Normalize path slashes
+                    norm_p = path.replace("\\", "/").lstrip("./")
+                    file_author_counts[norm_p][author_email] += 1
 
         if not file_author_counts:
             return BusFactorReport(
@@ -115,7 +106,7 @@ class OwnershipEngine:
 
         # 1. Build File Ownership Profiles
         file_profiles: dict[str, FileOwnershipProfile] = {}
-        primary_owner_coverage: dict[str, set[str]] = defaultdict(set)
+        file_authors_map: dict[str, set[str]] = {}
         siloed_files = 0
 
         for path, authors in file_author_counts.items():
@@ -138,7 +129,11 @@ class OwnershipEngine:
             if is_siloed:
                 siloed_files += 1
 
-            primary_owner_coverage[top_share.author_email].add(path)
+            # Authors with >= 20% contribution have maintenance knowledge
+            knowledge_authors = {
+                email for email, count in authors.items() if (count / total_file_commits) >= 0.20
+            }
+            file_authors_map[path] = knowledge_authors or {top_share.author_email}
 
             file_profiles[path] = FileOwnershipProfile(
                 file_path=path,
@@ -151,24 +146,28 @@ class OwnershipEngine:
                 author_shares=tuple(shares_list),
             )
 
-        # 2. Greedy Bus Factor Calculation (minimum authors covering > 50% of primary file ownerships)
+        # 2. True Rigby/Avelino Bus Factor: Minimum authors whose departure leaves > 50% files orphaned
         total_files = len(file_profiles)
-        target_coverage = total_files * 0.50
+        target_orphaned = total_files * 0.50
 
-        # Sort authors by number of files they primarily own
-        sorted_owners = sorted(
-            primary_owner_coverage.items(),
-            key=lambda item: len(item[1]),
-            reverse=True,
-        )
+        # Rank authors by total commits
+        sorted_authors = [
+            email for email, _ in sorted(repo_author_counts.items(), key=lambda x: x[1], reverse=True)
+        ]
 
-        covered_files: set[str] = set()
+        removed_authors: set[str] = set()
         key_maintainers: list[str] = []
 
-        for email, owned_files in sorted_owners:
-            covered_files.update(owned_files)
+        for email in sorted_authors:
+            removed_authors.add(email)
             key_maintainers.append(author_names.get(email, email))
-            if len(covered_files) >= target_coverage:
+
+            # Count how many files have ZERO remaining knowledge authors
+            orphaned_count = sum(
+                1 for path, authors in file_authors_map.items() if authors.issubset(removed_authors)
+            )
+
+            if orphaned_count >= target_orphaned or len(removed_authors) == len(sorted_authors):
                 break
 
         bus_factor = max(1, len(key_maintainers))
@@ -184,15 +183,6 @@ class OwnershipEngine:
         else:
             risk = "HEALTHY"
 
-        logger.info(
-            "Ownership analysis finished: BusFactor=%d (%s), Gini=%.3f, Siloed=%d/%d",
-            bus_factor,
-            risk,
-            gini,
-            siloed_files,
-            total_files,
-        )
-
         return BusFactorReport(
             bus_factor=bus_factor,
             key_maintainers=tuple(key_maintainers),
@@ -204,33 +194,3 @@ class OwnershipEngine:
             risk_level=risk,
             file_profiles=file_profiles,
         )
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    print("--- Demonstrating Contributor Ownership and Bus Factor Engine ---")
-    from pathlib import Path
-    from src.repoinsight.mining.miner import GitRepositoryMiner
-
-    local_repo = Path("data/repositories/github.com/octocat/Hello-World")
-    if local_repo.exists():
-        miner = GitRepositoryMiner(local_repo)
-        commits_stream = miner.mine_commits()
-    else:
-        commits_stream = []
-
-    engine = OwnershipEngine(silo_threshold=0.70)
-    report = engine.compute(commits_stream)
-
-    print(f"\n[OK] Empirical Bus Factor : {report.bus_factor}")
-    print(f"[OK] Risk Level           : {report.risk_level}")
-    print(f"[OK] Key Maintainers      : {report.key_maintainers}")
-    print(f"[OK] Total Contributors   : {report.total_contributors}")
-    print(f"[OK] Gini Inequality     : {report.gini_coefficient:.3f}")
-    print(f"[OK] Siloed Files Ratio   : {report.siloed_ratio * 100:.1f}% ({report.siloed_files_count}/{report.total_active_files})")
-
-    print("\n--- File Ownership Sample ---")
-    for path, prof in list(report.file_profiles.items())[:3]:
-        silo_str = " [SILO]" if prof.is_siloed else ""
-        print(f"  * {path:<30s} | Primary: {prof.primary_owner_name} ({prof.primary_owner_share * 100:.0f}%){silo_str} | Authors: {prof.author_count}")
