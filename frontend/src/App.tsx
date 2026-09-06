@@ -8,7 +8,7 @@ import { HealthReport, GraphData, GuidanceReport } from './types';
 import { Search, Loader2 } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [repoUrl, setRepoUrl] = useState<string>('.');
+  const [repoUrl, setRepoUrl] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [healthData, setHealthData] = useState<HealthReport | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
