@@ -5,9 +5,10 @@ import { Network, ZoomIn, ZoomOut, RotateCcw, Info } from 'lucide-react';
 
 interface Props {
   graphData: GraphData;
+  repoUrl: string;
 }
 
-export const DependencyGraphView: React.FC<Props> = ({ graphData }) => {
+export const DependencyGraphView: React.FC<Props> = ({ graphData, repoUrl }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
@@ -22,23 +23,23 @@ export const DependencyGraphView: React.FC<Props> = ({ graphData }) => {
         {
           selector: 'node',
           style: {
-            'background-color': '#6366f1',
+            'background-color': '#0969DA',
             'label': 'data(label)',
-            'color': '#cbd5e1',
-            'font-size': '10px',
+            'color': '#57606A',
+            'font-size': '12px',
             'text-valign': 'bottom',
             'text-margin-y': 4,
             'width': 'mapData(in_degree, 0, 5, 20, 50)',
             'height': 'mapData(in_degree, 0, 5, 20, 50)',
             'border-width': 2,
-            'border-color': '#818cf8',
+            'border-color': '#54AEFF',
           },
         },
         {
           selector: 'node:selected',
           style: {
-            'background-color': '#06b6d4',
-            'border-color': '#ffffff',
+            'background-color': '#0969DA',
+            'border-color': '#24292F',
             'border-width': 3,
           },
         },
@@ -46,8 +47,8 @@ export const DependencyGraphView: React.FC<Props> = ({ graphData }) => {
           selector: 'edge',
           style: {
             'width': 1.5,
-            'line-color': '#334155',
-            'target-arrow-color': '#64748b',
+            'line-color': '#8C959F',
+            'target-arrow-color': '#8C959F',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             'arrow-scale': 0.8,
@@ -81,48 +82,55 @@ export const DependencyGraphView: React.FC<Props> = ({ graphData }) => {
   const handleReset = () => cyRef.current?.fit();
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+    <div className="bg-white border border-gh-border rounded-md p-4 space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center space-x-2">
-          <Network className="w-5 h-5 text-indigo-400" />
-          <h2 className="text-base font-bold text-slate-100">Dependency Graph Topology</h2>
+        <div>
+          <h2 className="text-base font-semibold text-gh-fg flex items-center gap-1.5">
+            <Network className="w-4 h-4 text-gh-muted" strokeWidth={1.75} />
+            Dependency Graph
+          </h2>
+          {repoUrl && (
+            <p className="text-xs text-gh-muted mt-0.5">
+              Repository: <span className="font-mono text-gh-fg">{repoUrl}</span>
+            </p>
+          )}
         </div>
 
         <div className="flex items-center space-x-2 text-xs">
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300">
+          <span className="px-2 py-1 rounded-md bg-gh-canvas border border-gh-border text-gh-muted tabular-nums">
             {graphData.total_nodes} nodes
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300">
+          <span className="px-2 py-1 rounded-md bg-gh-canvas border border-gh-border text-gh-muted tabular-nums">
             {graphData.total_edges} edges
           </span>
           {graphData.total_nodes > 0 && (
-            <div className="flex space-x-1 border border-slate-700 rounded-lg overflow-hidden">
-              <button onClick={handleZoomIn} className="p-1.5 hover:bg-slate-800 text-slate-300"><ZoomIn className="w-3.5 h-3.5" /></button>
-              <button onClick={handleZoomOut} className="p-1.5 hover:bg-slate-800 text-slate-300"><ZoomOut className="w-3.5 h-3.5" /></button>
-              <button onClick={handleReset} className="p-1.5 hover:bg-slate-800 text-slate-300"><RotateCcw className="w-3.5 h-3.5" /></button>
+            <div className="flex border border-gh-border rounded-md overflow-hidden">
+              <button onClick={handleZoomIn} className="p-1.5 hover:bg-gh-canvas text-gh-muted border-r border-gh-border"><ZoomIn className="w-3.5 h-3.5" /></button>
+              <button onClick={handleZoomOut} className="p-1.5 hover:bg-gh-canvas text-gh-muted border-r border-gh-border"><ZoomOut className="w-3.5 h-3.5" /></button>
+              <button onClick={handleReset} className="p-1.5 hover:bg-gh-canvas text-gh-muted"><RotateCcw className="w-3.5 h-3.5" /></button>
             </div>
           )}
         </div>
       </div>
 
       {graphData.total_nodes === 0 ? (
-        <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-8 text-center text-xs text-slate-400 flex flex-col items-center space-y-2">
-          <Info className="w-6 h-6 text-slate-500" />
-          <p className="font-semibold text-slate-300">No source code dependency graph found</p>
-          <p className="text-[11px] text-slate-500">This repository contains only non-source documentation/markdown files. Try auditing a codebase with source code (e.g. <span className="font-mono text-cyan-400">.</span> or a Python repository).</p>
+        <div className="bg-gh-canvas border border-gh-border rounded-md p-8 text-center text-xs text-gh-muted flex flex-col items-center space-y-2">
+          <Info className="w-5 h-5 text-gh-muted" />
+          <p className="font-medium text-gh-fg">No source code dependency graph found</p>
+          <p className="text-xs text-gh-muted">This repository contains only non-source documentation/markdown files. Try auditing a codebase with source code (e.g. <span className="font-mono text-gh-fg">.</span> or a Python repository).</p>
         </div>
       ) : (
         <div className="relative">
-          <div ref={containerRef} id="cy" className="shadow-inner border border-slate-800/80" />
+          <div ref={containerRef} id="cy" className="border border-gh-border rounded-md" />
 
           {selectedNode && (
-            <div className="absolute top-4 right-4 bg-slate-900/95 border border-slate-700 p-4 rounded-xl shadow-2xl backdrop-blur max-w-xs text-xs space-y-2">
-              <h4 className="font-bold text-indigo-400 truncate">{selectedNode.path}</h4>
-              <div className="grid grid-cols-2 gap-2 text-slate-300 pt-1">
-                <div>SLOC: <span className="font-semibold text-white">{selectedNode.sloc}</span></div>
-                <div>Complexity: <span className="font-semibold text-white">{selectedNode.avg_complexity}</span></div>
-                <div>In-Degree: <span className="font-semibold text-white">{selectedNode.in_degree}</span></div>
-                <div>Out-Degree: <span className="font-semibold text-white">{selectedNode.out_degree}</span></div>
+            <div className="absolute top-4 right-4 bg-white border border-gh-border p-4 rounded-md shadow-sm max-w-xs text-xs space-y-2">
+              <h4 className="font-semibold text-gh-accent truncate">{selectedNode.path}</h4>
+              <div className="grid grid-cols-2 gap-2 text-gh-muted pt-1">
+                <div>SLOC: <span className="font-medium text-gh-fg">{selectedNode.sloc}</span></div>
+                <div>Complexity: <span className="font-medium text-gh-fg">{selectedNode.avg_complexity}</span></div>
+                <div>In-Degree: <span className="font-medium text-gh-fg">{selectedNode.in_degree}</span></div>
+                <div>Out-Degree: <span className="font-medium text-gh-fg">{selectedNode.out_degree}</span></div>
               </div>
             </div>
           )}
@@ -130,4 +138,4 @@ export const DependencyGraphView: React.FC<Props> = ({ graphData }) => {
       )}
     </div>
   );
-}; 
+};

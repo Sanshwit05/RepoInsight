@@ -1,103 +1,142 @@
 import React from 'react';
-import { HealthReport } from '../types';
-import { Award, Users, AlertTriangle, Code2, CheckCircle2 } from 'lucide-react';
+import { HealthReport, GraphData, GuidanceReport } from '../types';
+import { CheckCircle2, GitBranch, Network } from 'lucide-react';
+import { Badge } from './Badge';
+import { MetricPanel } from './MetricPanel';
 
 interface Props {
   report: HealthReport;
+  graphData: GraphData | null;
+  guidanceData: GuidanceReport | null;
 }
 
-export const HealthOverview: React.FC<Props> = ({ report }) => {
+function countDistinctOwners(guidance: GuidanceReport | null): number | null {
+  if (!guidance) return null;
+  const owners = new Set<string>();
+  [...guidance.beginner_friendly_files, ...guidance.high_risk_core_files, ...guidance.siloed_files].forEach((f) => {
+    if (f.primary_owner) owners.add(f.primary_owner);
+  });
+  return owners.size;
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+export const HealthOverview: React.FC<Props> = ({ report, graphData, guidanceData }) => {
+  const contributorCount = countDistinctOwners(guidanceData);
+  const riskScore = round1(100 - report.overall_score);
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-            <span>Overall Health</span>
-            <Award className="w-4 h-4 text-indigo-400" />
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black text-indigo-400">{report.overall_score}</span>
-            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-              Grade {report.grade}
-            </span>
-          </div>
-          <div className="w-full bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
-            <div className="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full rounded-full" style={{ width: `${report.overall_score}%` }} />
+    <div className="space-y-4">
+      {/* Repository identity strip */}
+      <div className="bg-white border border-gh-border rounded-md px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs text-gh-muted uppercase tracking-wide">Repository</div>
+          <div className="text-base font-semibold text-gh-fg font-mono truncate max-w-lg" title={report.repo_path}>
+            {report.repo_path}
           </div>
         </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-            <span>Empirical Bus Factor</span>
-            <Users className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black text-emerald-400">{report.bus_factor}</span>
-            <span className="text-xs text-slate-400">Maintainers</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-4 truncate">
-            {report.bus_factor <= 1 ? '⚠️ Critical single point of failure' : '✅ Healthy knowledge distribution'}
-          </p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-            <span>Critical Hotspots</span>
-            <AlertTriangle className="w-4 h-4 text-rose-400" />
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black text-rose-400">{report.critical_hotspots_count}</span>
-            <span className="text-xs text-slate-400">Technical Debt</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-4 truncate">High complexity & churn files</p>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-            <span>Codebase Scale</span>
-            <Code2 className="w-4 h-4 text-cyan-400" />
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-black text-cyan-400">{report.total_sloc.toLocaleString()}</span>
-            <span className="text-xs text-slate-400">SLOC</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-4 truncate">
-            {report.total_files} files | {report.total_commits} commits
-          </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="accent">Grade {report.grade}</Badge>
+          {report.circular_dependencies_count > 0 ? (
+            <Badge variant="danger">{report.circular_dependencies_count} circular deps</Badge>
+          ) : (
+            <Badge variant="success">No circular deps</Badge>
+          )}
         </div>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Health Pillars Breakdown (0 - 100)</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
-            <span className="text-xs text-slate-400">Complexity & AST</span>
-            <p className="text-xl font-bold text-slate-200 mt-1">{report.sub_scores.complexity_score} / 100</p>
+      {/* Metric panels */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <MetricPanel label="Overall Health" value={`${round1(report.overall_score)}`} hint="out of 100" />
+        <MetricPanel label="Files" value={report.total_files.toLocaleString()} />
+        <MetricPanel label="Dependencies" value={graphData ? graphData.total_edges.toLocaleString() : '—'} hint="graph edges" />
+        <MetricPanel label="Contributors" value={contributorCount ?? '—'} />
+        <MetricPanel label="Commits" value={report.total_commits.toLocaleString()} />
+        <MetricPanel label="Risk Score" value={`${riskScore}%`} hint={`${report.critical_hotspots_count} hotspots`} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Repository Health */}
+        <div className="lg:col-span-2 bg-white border border-gh-border rounded-md p-4 space-y-4">
+          <h3 className="text-base font-semibold text-gh-fg">Repository Health</h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gh-canvas p-3 rounded-md border border-gh-border">
+              <span className="text-xs text-gh-muted">Complexity &amp; AST</span>
+              <p className="text-base font-semibold text-gh-fg mt-0.5 tabular-nums">{round1(report.sub_scores.complexity_score)} / 100</p>
+            </div>
+            <div className="bg-gh-canvas p-3 rounded-md border border-gh-border">
+              <span className="text-xs text-gh-muted">Hotspots &amp; Debt</span>
+              <p className="text-base font-semibold text-gh-fg mt-0.5 tabular-nums">{round1(report.sub_scores.hotspot_score)} / 100</p>
+            </div>
+            <div className="bg-gh-canvas p-3 rounded-md border border-gh-border">
+              <span className="text-xs text-gh-muted">Architecture DAG</span>
+              <p className="text-base font-semibold text-gh-fg mt-0.5 tabular-nums">{round1(report.sub_scores.architecture_score)} / 100</p>
+            </div>
+            <div className="bg-gh-canvas p-3 rounded-md border border-gh-border">
+              <span className="text-xs text-gh-muted">Ownership &amp; Silos</span>
+              <p className="text-base font-semibold text-gh-fg mt-0.5 tabular-nums">{round1(report.sub_scores.ownership_score)} / 100</p>
+            </div>
           </div>
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
-            <span className="text-xs text-slate-400">Hotspots & Debt</span>
-            <p className="text-xl font-bold text-slate-200 mt-1">{report.sub_scores.hotspot_score} / 100</p>
-          </div>
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
-            <span className="text-xs text-slate-400">Architecture DAG</span>
-            <p className="text-xl font-bold text-slate-200 mt-1">{report.sub_scores.architecture_score} / 100</p>
-          </div>
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
-            <span className="text-xs text-slate-400">Ownership & Silos</span>
-            <p className="text-xl font-bold text-slate-200 mt-1">{report.sub_scores.ownership_score} / 100</p>
+
+          <div>
+            <h4 className="text-xs font-semibold text-gh-muted mb-2 uppercase tracking-wide">Key Findings</h4>
+            <div className="space-y-1.5">
+              {report.key_findings.map((f, i) => (
+                <div key={i} className="flex items-start space-x-2 text-sm text-gh-fg">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-gh-muted shrink-0 mt-0.5" />
+                  <span>{f}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="pt-2">
-          <h4 className="text-xs font-semibold text-slate-400 mb-2">Key Executive Findings:</h4>
-          <div className="space-y-1.5">
-            {report.key_findings.map((f, i) => (
-              <div key={i} className="flex items-start space-x-2 text-xs text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                <span>{f}</span>
+        {/* Dependency overview */}
+        <div className="bg-white border border-gh-border rounded-md p-4 space-y-3">
+          <h3 className="text-base font-semibold text-gh-fg flex items-center gap-1.5">
+            <Network className="w-4 h-4 text-gh-muted" strokeWidth={1.75} />
+            Dependency Overview
+          </h3>
+
+          {graphData ? (
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-gh-muted">Nodes</span>
+                <span className="text-gh-fg font-medium tabular-nums">{graphData.total_nodes}</span>
               </div>
-            ))}
-          </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gh-muted">Edges</span>
+                <span className="text-gh-fg font-medium tabular-nums">{graphData.total_edges}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gh-muted">Density</span>
+                <span className="text-gh-fg font-medium tabular-nums">{graphData.density.toFixed(3)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gh-muted">Structure</span>
+                {graphData.is_dag ? (
+                  <Badge variant="success">Acyclic (DAG)</Badge>
+                ) : (
+                  <Badge variant="danger">{graphData.cycles_count} cycle(s)</Badge>
+                )}
+              </div>
+              {graphData.top_hubs.length > 0 && (
+                <div className="pt-2 border-t border-gh-border">
+                  <span className="text-xs text-gh-muted uppercase tracking-wide flex items-center gap-1">
+                    <GitBranch className="w-3 h-3" /> Top Hubs
+                  </span>
+                  <ul className="mt-1 space-y-0.5">
+                    {graphData.top_hubs.slice(0, 3).map((h, i) => (
+                      <li key={i} className="font-mono text-xs text-gh-fg truncate">{h}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-gh-muted">Dependency graph unavailable for this repository.</p>
+          )}
         </div>
       </div>
     </div>
